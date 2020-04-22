@@ -16,11 +16,11 @@
 //! use tari_common::ConfigBootstrap;
 //! use structopt::StructOpt;
 //!
-//! #[derive(StructOpt)]
+//! #[derive(StructOpt, Debug)]
 //! /// The reference Tari cryptocurrency base node implementation
 //! struct Arguments {
 //!     /// Create and save new node identity if one doesn't exist
-//!     #[structopt(long)]
+//!     #[structopt(long, alias("create_id"))]
 //!     id: bool,
 //!     #[structopt(flatten)]
 //!     bootstrap: ConfigBootstrap,
@@ -73,7 +73,15 @@ use structopt::{clap::ArgMatches, StructOpt};
 #[derive(StructOpt, Debug)]
 pub struct ConfigBootstrap {
     /// A path to a directory to store your files
-    #[structopt(short, long, alias("base_dir"), hide_default_value(true), default_value = "")]
+    #[structopt(
+        short,
+        long,
+        alias("base_path"),
+        alias("base_dir"),
+        alias("base-dir"),
+        hide_default_value(true),
+        default_value = ""
+    )]
     pub base_path: PathBuf,
     /// A path to the configuration file to use (config.toml)
     #[structopt(short, long, hide_default_value(true), default_value = "")]
@@ -91,6 +99,15 @@ pub struct ConfigBootstrap {
     /// Create a default configuration file if it doesn't exist
     #[structopt(long)]
     pub init: bool,
+}
+
+#[derive(StructOpt, Debug)]
+pub struct Arguments {
+    /// Create and save new node identity if one doesn't exist
+    #[structopt(long, alias("create_id"))]
+    pub create_id: bool,
+    #[structopt(flatten)]
+    pub bootstrap: ConfigBootstrap,
 }
 
 impl Default for ConfigBootstrap {
@@ -132,7 +149,7 @@ impl ConfigBootstrap {
         }
 
         let log_config = if self.log_config.to_str() == Some("") {
-            None
+            Some(dir_utils::default_path(DEFAULT_LOG_CONFIG, Some(&self.base_path)))
         } else {
             Some(self.log_config.clone())
         };
@@ -271,8 +288,16 @@ where F: Fn(&Path) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod test {
-    use super::ConfigBootstrap;
-    use crate::{bootstrap_config_from_cli, dir_utils, dir_utils::default_subdir, load_configuration};
+    use crate::{
+        bootstrap_config_from_cli,
+        dir_utils,
+        dir_utils::default_subdir,
+        load_configuration,
+        Arguments,
+        ConfigBootstrap,
+        DEFAULT_CONFIG,
+        DEFAULT_LOG_CONFIG,
+    };
     use structopt::{clap::clap_app, StructOpt};
     use tari_test_utils::random::string;
     use tempdir::TempDir;
@@ -366,8 +391,20 @@ mod test {
         }
 
         // Assert results
+        assert_eq!(
+            &bootstrap.base_path.to_str(),
+            &Some(default_subdir("", Some(dir)).as_str())
+        );
         assert!(config_exists);
+        assert_eq!(
+            &bootstrap.config.to_str().unwrap_or_default(),
+            &(default_subdir("", Some(dir)).as_str().to_owned() + DEFAULT_CONFIG).as_str()
+        );
         assert!(log_config_exists);
+        assert_eq!(
+            &bootstrap.log_config.to_str().unwrap_or_default(),
+            &(default_subdir("", Some(dir)).as_str().to_owned() + DEFAULT_LOG_CONFIG).as_str()
+        );
         assert!(&cfg.is_ok());
     }
 
@@ -377,16 +414,6 @@ mod test {
         let dir = &temp_dir.path().to_path_buf();
         // Create test folder
         dir_utils::create_data_directory(Some(dir)).unwrap();
-
-        #[derive(StructOpt)]
-        /// The reference Tari cryptocurrency base node implementation
-        struct Arguments {
-            /// Create and save new node identity if one doesn't exist
-            #[structopt(long = "create_id")]
-            create_id: bool,
-            #[structopt(flatten)]
-            bootstrap: super::ConfigBootstrap,
-        }
 
         // Create command line test data
         let mut args = Arguments::from_iter_safe(vec![
@@ -399,6 +426,8 @@ mod test {
         .expect("failed to process arguments");
         // Init bootstrap dirs
         args.bootstrap.init_dirs().expect("failed to initialize dirs");
+        let config_exists = std::path::Path::new(&args.bootstrap.config).exists();
+        let log_config_exists = std::path::Path::new(&args.bootstrap.log_config).exists();
         // Load and apply configuration file
         let cfg = load_configuration(&args.bootstrap);
 
@@ -408,9 +437,47 @@ mod test {
         }
 
         // Assert results
+        assert_eq!(
+            args.bootstrap.base_path.to_str(),
+            Some(default_subdir("", Some(dir)).as_str())
+        );
         assert!(args.bootstrap.init);
         assert!(args.create_id);
         assert!(&cfg.is_ok());
+        assert!(config_exists);
+        assert_eq!(
+            &args.bootstrap.config.to_str().unwrap_or_default(),
+            &(default_subdir("", Some(dir)).as_str().to_owned() + DEFAULT_CONFIG).as_str()
+        );
+        assert!(log_config_exists);
+        assert_eq!(
+            &args.bootstrap.log_config.to_str().unwrap_or_default(),
+            &(default_subdir("", Some(dir)).as_str().to_owned() + DEFAULT_LOG_CONFIG).as_str()
+        );
+
+        // Test command line argument aliases
+        args = Arguments::from_iter_safe(vec![
+            "",
+            "--base_dir",
+            "no-dir-created",
+            "--create_id",
+            "--log_config",
+            "no-file-created",
+        ])
+        .expect("failed to process arguments");
+        assert_eq!(args.bootstrap.base_path.to_str(), Some("no-dir-created"));
+        assert!(args.create_id);
+        assert_eq!(args.bootstrap.log_config.to_str(), Some("no-file-created"));
+        args = Arguments::from_iter_safe(vec![
+            "",
+            "--log-config",
+            "no-file-created",
+            "--config",
+            "no-file-created",
+        ])
+        .expect("failed to process arguments");
+        assert_eq!(args.bootstrap.log_config.to_str(), Some("no-file-created"));
+        assert_eq!(args.bootstrap.config.to_str(), Some("no-file-created"));
     }
 
     #[test]

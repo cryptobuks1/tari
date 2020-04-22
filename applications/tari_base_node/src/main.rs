@@ -95,7 +95,7 @@ use parser::Parser;
 use rustyline::{config::OutputStreamType, error::ReadlineError, CompletionType, Config, EditMode, Editor};
 use std::{path::PathBuf, sync::Arc};
 use structopt::StructOpt;
-use tari_common::GlobalConfig;
+use tari_common::{Arguments, GlobalConfig};
 use tari_comms::{multiaddr::Multiaddr, peer_manager::PeerFeatures, NodeIdentity};
 use tari_shutdown::Shutdown;
 use tokio::runtime::Runtime;
@@ -126,7 +126,7 @@ fn main() {
 /// Sets up the base node and runs the cli_loop
 fn main_inner() -> Result<(), ExitCodes> {
     // Parse and validate command-line arguments
-    let mut arguments = cli::Arguments::from_args();
+    let mut arguments = Arguments::from_args();
 
     // check and initialize configuration files
     arguments.bootstrap.init_dirs()?;
